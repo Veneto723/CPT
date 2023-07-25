@@ -1,3 +1,5 @@
+import fnmatch
+from sklearn.model_selection import train_test_split
 from datasets import load_dataset
 import pandas as pd
 import jieba
@@ -152,7 +154,13 @@ class DataProcessor:
                   f"Total elapsed time: {total_elapsed_time:.2f} seconds. "
                   f"Estimated remaining time: {estimated_remaining_time:.2f} seconds.")
 
-        print("Data Process completion.")
+        print("Data Process completion. Start dataset partition")
+        files = [f for f in os.listdir(self.dataset_path) if fnmatch.fnmatch(f, 'sentences*.csv.bz2')]
+        train_files = val_files = train_test_split(files, test_size=0.2, random_state=69)
+        for file in train_files:
+            os.rename(self.dataset_path + file, self.train_dataset_path + file)
+        for file in val_files:
+            os.rename(self.dataset_path + file, self.val_dataset_path + file)
         os.remove("./progress.pickle")
 
 
