@@ -117,14 +117,14 @@ class CPTrainer:
 # Static parameters
 d_model = 768
 warmup_step = 10000
-max_seq_len = 256  # BERT uses 512 as max_seq_len
+max_seq_len = 512
 batch_size = 256
 train_epochs = 10
 tokenizer = BertTokenizer(vocab_file="./dataset/bert_vocab.txt", do_lower_case=False)
 input_vocab_size = output_vocab_size = tokenizer.vocab_size
 checkpoint_path = "./checkpoints/train"
-train_dataset_path = 'F:/datasets/train'
-validation_dataset_path = 'F:/datasets/validation'
+train_dataset_path = '/home/veneto/datasets/train'
+validation_dataset_path = '/home/veneto/datasets/validation'
 usage_file_path = './dataset/usage_file.json'
 
 # initialize model, loss function and optimizer
@@ -149,15 +149,9 @@ file_writer.set_as_default()
 
 # fetch train&validation dataset
 loader = DataLoader(train_dataset_path, validation_dataset_path, usage_file_path)
-train_dataset = loader.load(mode='train', batch_size=batch_size)
-val_dataset = loader.load(mode='validation', batch_size=batch_size)
+train_dataset = loader.load(mode='train', batch_size=batch_size, tokenizer=tokenizer)
+val_dataset = loader.load(mode='validation', batch_size=batch_size,tokenizer=tokenizer)
 # initialize trainer class
 trainer = CPTrainer(model, loss_fn, optimizer, ckpt_manager)
 # start training
 trainer.train(train_dataset=train_dataset, val_dataset=val_dataset, num_epochs=train_epochs)
-
-"""
-    TODO 在BERT的论文中，"we pre-train the model with sequence length of 128 for 90% of the steps. Then we train the rest
-    10% of the steps of sequence of 512 to learn the positional encoding." 所以理论上我们是可以“自由”调整max_seq_len的，但是
-    要考虑到模型的计算复杂性和服务器算力
-"""

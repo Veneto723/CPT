@@ -8,8 +8,8 @@ class PositionalEncoding(layers.Layer):
         self.pos_encoding = self.positional_encoding(position, d_model)
 
     def get_angles(self, pos, i, d_model):
-        angle = 1 / tf.pow(10000, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
-        return pos * angle
+        angle = 1 / tf.pow(10000, (2 * (tf.cast(i, tf.float32) // 2)) / tf.cast(d_model, tf.float32))
+        return tf.cast(pos, tf.float32) * angle
 
     def positional_encoding(self, position, d_model):
         # shape of [position, 1], shape of [1, d_model] --> [position, d_model // 2]

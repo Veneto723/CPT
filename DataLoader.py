@@ -83,7 +83,7 @@ class DataLoader:
             dataset_path = self.train_dataset_path
         else:
             dataset_path = self.val_dataset_path
-        all_files = [file for file in os.listdir(dataset_path) if file.startswith("padded_sentences")]
+        all_files = [file for file in os.listdir(dataset_path) if file.endswith(".csv.bz2")]
         epsilon = 0.9 * tf.math.exp(-0.001 * self.steps) + 0.1
         # epsilon-greedy strategy
         if random.random() < epsilon or not self.file_usage_counts:
