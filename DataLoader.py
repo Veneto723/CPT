@@ -4,36 +4,45 @@ import json
 import tensorflow as tf
 import pandas as pd
 import ast
+import re
 
 
 def text_infilling(sequence, tokenizer, rate=0.15):
     # Convert token ids to words
     words = tokenizer.convert_ids_to_tokens(sequence)
-
-    # Determine special tokens
-    is_special = [True if word in tokenizer.all_special_tokens else False for word in words]
+    # Determine special and padding tokens
+    is_special_pad = [True if word in tokenizer.all_special_tokens or word == tokenizer.pad_token or sequence[
+        i] == tokenizer.pad_token_id else False for i, word in enumerate(words)]
 
     word_list = []
     temp_word = []
-    for word, special in zip(words, is_special):
-        if not special:
+    word_is_special_pad = []  # this list will keep track of whether each word is special or padding
+    for word, special_pad in zip(words, is_special_pad):
+        if not special_pad:
             if word.startswith("##"):
                 temp_word.append(word)
             else:
                 if temp_word:
                     word_list.append(temp_word)
+                    word_is_special_pad.append(False)  # if it's not a special or padding token, add False
                 temp_word = [word]
         else:
             if temp_word:
                 word_list.append(temp_word)
+                word_is_special_pad.append(False)  # if it's not a special or padding token, add False
             temp_word = []
             word_list.append([word])
+            word_is_special_pad.append(True)  # if it's a special or padding token, add True
     if temp_word:
         word_list.append(temp_word)
+        word_is_special_pad.append(False)  # if it's not a special or padding token, add False
 
-    # Randomly mask some words
-    num_to_mask = int(len(word_list) * rate)
-    mask_indices = random.sample(range(len(word_list)), num_to_mask)
+    # Exclude special tokens and padding tokens from being masked
+    non_special_pad_word_indices = [i for i in range(len(word_list)) if not word_is_special_pad[i]]
+
+    # Randomly mask some words excluding special tokens and padding tokens
+    num_to_mask = int(len(non_special_pad_word_indices) * rate)
+    mask_indices = random.sample(non_special_pad_word_indices, num_to_mask)
     for i in mask_indices:
         for j in range(len(word_list[i])):
             word_list[i][j] = tokenizer.mask_token
@@ -44,6 +53,16 @@ def text_infilling(sequence, tokenizer, rate=0.15):
 
     # Convert list to a TensorFlow tensor for downstream processing
     return tf.constant(masked_ids, dtype=tf.int32)
+
+
+def shuffle_sentences(text):
+    # Split the text into sentences based on the Chinese punctuation marks
+    sentences = re.split(r'([。？！；，])', text)
+    # Group each sentence with the punctuation mark that follows it
+    sentences = [sentences[i] + (sentences[i + 1] if i + 1 < len(sentences) else '') for i in
+                 range(0, len(sentences), 2)]
+    random.shuffle(sentences)
+    return ''.join(sentences)
 
 
 class DataLoader:
@@ -98,24 +117,23 @@ class DataLoader:
         self.steps += 1
         return chosen_file
 
-    def load(self, tokenizer, mode='train', batch_size=64, mask_rate=0.15):
+    def load(self, tokenizer, mode='train', batch_size=64, mask_rate=0.15, shuffling=False):
         chosen_file = self.select_next_files(mode)
         file_path = os.path.join(self.train_dataset_path if mode == 'train' else self.val_dataset_path, chosen_file)
 
         # Read the CSV file as a pandas DataFrame, and convert the string of token IDs into list of integers
         frame = pd.read_csv(file_path, names=['text'])
         frame['text'] = frame['text'].apply(lambda x: ast.literal_eval(x))
+        # Apply text_infilling to the sequences and then convert the resulting list of tensors into one tensor
+        frame['masked_text'] = frame['text'].apply(
+            lambda x: text_infilling(x, tokenizer, rate=mask_rate))
 
-        # Convert the DataFrame to a list of lists and then shuffle
-        data_list = frame['text'].to_list()
-        random.shuffle(data_list)
-
-        # Use the map function to apply text_infilling to each sequence in the dataset
-        infilled_data = data_list.map(lambda x: text_infilling(x, tokenizer, rate=mask_rate))
-
-        # Zip the datasets together to form (masked, unmasked) pairs, batch, and cache the data
-        dataset = tf.data.Dataset.zip((infilled_data, data_list)).batch(batch_size).cache()
+        original_tensors = tf.stack(frame['text'].tolist())
+        masked_tensors = tf.stack(frame['masked_text'].tolist())
+        # Create a dataset
+        dataset = tf.data.Dataset.from_tensor_slices((masked_tensors, original_tensors))
+        dataset = dataset.shuffle(buffer_size=10000)
+        dataset = dataset.batch(batch_size)
 
         self.save_usage_counts()
-
         return dataset

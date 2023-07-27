@@ -11,7 +11,8 @@ class CPTModel(tf.keras.Model):
         self.encoder = Transformer.Encoder(num_layer_enc, d_model, num_head, dff, input_vocab_size, pe_input, rate)
         self.decoder_u = Transformer.Decoder(num_layer_dec, d_model, num_head, dff, output_vocab_size, pe_output, rate)
         self.decoder_g = Transformer.Decoder(num_layer_dec, d_model, num_head, dff, output_vocab_size, pe_output, rate)
-        self.final_layer = Transformer.FinalLayer()
+        self.final_layer_u = Transformer.FinalLayer()
+        self.final_layer_g = Transformer.FinalLayer()
 
     def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask, dec_padding_mask, task='understanding'):
         enc_output = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
