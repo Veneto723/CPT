@@ -10,7 +10,7 @@ import datetime
 
 
 class CPTrainer:
-    def __init__(self, model, loss_fn, optimizer, ckpt_manager):
+    def __init__(self, model, loss_fn, optimizer, ckpt_manager, loader):
         self.model = model
         self.loss_fn = loss_fn
         self.optimizer = optimizer
@@ -20,17 +20,19 @@ class CPTrainer:
         self.val_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='val_accuracy')
         self.ckpt_manager = ckpt_manager
         self.best_val_loss = float('inf')
+        self.loader = loader
 
     def evaluate(self, inp, tar_u, tar_g, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u,
                  look_ahead_mask_g, dec_padding_mask_g):
         prediction_u, _ = self.model(inp, tar_u, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u,
                                      task='understanding')
-        prediction_g, _ = self.model(inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g,
-                                     task='generation')
+        # prediction_g, _ = self.model(inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g,
+        #                              task='generation')
         loss_u = self.loss_fn(tar_u, prediction_u)
-        loss_g = self.loss_fn(tar_g, prediction_g)
-        loss = loss_u + loss_g
-        return loss, prediction_u, prediction_g
+        # loss_g = self.loss_fn(tar_g, prediction_g)
+        # loss = loss_u + loss_g
+        # return loss, prediction_u, prediction_g
+        return loss_u, prediction_u
 
     @tf.function
     def train_step_u(self, inp, tar_u, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u):
@@ -44,17 +46,17 @@ class CPTrainer:
         self.train_loss(loss_u)
         self.train_accuracy(tar_u, prediction_u)
 
-    @tf.function
-    def train_step_g(self, inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g):
-        with tf.GradientTape() as tape:
-            prediction_g, _ = self.model(inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g,
-                                         task='generation')
-            loss_g = self.loss_fn(tar_g, prediction_g)
-        gradients = tape.gradient(loss_g, self.model.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-
-        self.train_loss(loss_g)
-        self.train_accuracy(tar_g, prediction_g)
+    # @tf.function
+    # def train_step_g(self, inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g):
+    #     with tf.GradientTape() as tape:
+    #         prediction_g, _ = self.model(inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g,
+    #                                      task='generation')
+    #         loss_g = self.loss_fn(tar_g, prediction_g)
+    #     gradients = tape.gradient(loss_g, self.model.trainable_variables)
+    #     self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+    #
+    #     self.train_loss(loss_g)
+    #     self.train_accuracy(tar_g, prediction_g)
 
     @tf.function
     def val_step_u(self, inp, tar_u, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u):
@@ -65,82 +67,83 @@ class CPTrainer:
         self.val_loss(loss_u)
         self.val_accuracy(tar_u, prediction_u)
 
-    @tf.function
-    def val_step_g(self, inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g):
-        prediction_g, _ = self.model(inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g,
-                                     task='generation')
-        loss_g = self.loss_fn(tar_g, prediction_g)
+    # @tf.function
+    # def val_step_g(self, inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g):
+    #     prediction_g, _ = self.model(inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g,
+    #                                  task='generation')
+    #     loss_g = self.loss_fn(tar_g, prediction_g)
+    #
+    #     self.val_loss(loss_g)
+    #     self.val_accuracy(tar_g, prediction_g)
 
-        self.val_loss(loss_g)
-        self.val_accuracy(tar_g, prediction_g)
+    def load_new_dataset(self, batch_size, tokenizer):
+        dataset = loader.load(batch_size=batch_size, tokenizer=tokenizer)
+        val_dataset = loader.load(batch_size=batch_size, tokenizer=tokenizer)
+        return dataset, val_dataset
 
-    def train(self, train_u_dataset, train_g_dataset, val_u_dataset, val_g_dataset, num_epochs):
+    def train(self, batch_size, tokenizer, num_epochs):
+        train_dataset, val_dataset = None, None
         for epoch in range(num_epochs):
             start = time.time()
             self.train_loss.reset_states()
             self.train_accuracy.reset_states()
             self.val_loss.reset_states()
             self.val_accuracy.reset_states()
-            # Get one batch of data
-            inp, tar = next(iter(train_u_dataset))
-
-            # Create dummy masks
-            enc_padding_mask, combined_mask, dec_padding_mask = Transformer.create_masks(inp, tar)
-
-            # Call model on dummy data
-            _ = model(inp, tar, training=False, enc_padding_mask=enc_padding_mask, look_ahead_mask=combined_mask,
-                      dec_padding_mask=dec_padding_mask, task='understanding')
+            print(f'Start training epoch {epoch + 1}')
+            if epoch % 10 == 0:
+                # fetch train&validation dataset
+                print("Fetch new training data")
+                train_dataset, val_dataset = self.load_new_dataset(batch_size, tokenizer)
 
             # Training for understanding task
-            for (batch, (inp, tar)) in enumerate(train_u_dataset):
+            for (batch, (inp, tar)) in enumerate(train_dataset):
                 enc_padding_mask, combined_mask, dec_padding_mask = Transformer.create_masks(inp, tar)
                 self.train_step_u(inp, tar, True, enc_padding_mask, combined_mask, dec_padding_mask)
             tf.summary.scalar('u_loss', self.train_loss.result(), step=epoch)
             tf.summary.scalar('u_accuracy', self.train_accuracy.result(), step=epoch)
 
             # Training for generation task
-            for (batch, (inp, tar)) in enumerate(train_g_dataset):
-                enc_padding_mask, combined_mask, dec_padding_mask = Transformer.create_masks(inp, tar)
-                self.train_step_g(inp, tar, True, enc_padding_mask, combined_mask. dec_padding_mask)
-            tf.summary.scalar('g_loss', self.train_loss.result(), step=epoch)
-            tf.summary.scalar('g_accuracy', self.train_accuracy.result(), step=epoch)
-
+            # for (batch, (inp, tar)) in enumerate(train_g_dataset):
+            #     enc_padding_mask, combined_mask, dec_padding_mask = Transformer.create_masks(inp, tar)
+            #     self.train_step_g(inp, tar, True, enc_padding_mask, combined_mask. dec_padding_mask)
+            # tf.summary.scalar('g_loss', self.train_loss.result(), step=epoch)
+            # tf.summary.scalar('g_accuracy', self.train_accuracy.result(), step=epoch)
+            print(f'Start validating epoch {epoch + 1}')
             # Validation for understanding task
-            for (batch, (inp, tar)) in enumerate(val_u_dataset):
+            for (batch, (inp, tar)) in enumerate(val_dataset):
                 enc_padding_mask, combined_mask, dec_padding_mask = Transformer.create_masks(inp, tar)
                 self.val_step_u(inp, tar, False, enc_padding_mask, combined_mask, dec_padding_mask)
             tf.summary.scalar('u_val_loss', self.val_loss.result(), step=epoch)
             tf.summary.scalar('u_val_accuracy', self.val_accuracy.result(), step=epoch)
 
             # Validation for generation task
-            for (batch, (inp, tar)) in enumerate(val_g_dataset):
-                enc_padding_mask, combined_mask, dec_padding_mask = Transformer.create_masks(inp, tar)
-                self.val_step_g(inp, tar, False, enc_padding_mask, combined_mask, dec_padding_mask)
-            tf.summary.scalar('g_val_loss', self.val_loss.result(), step=epoch)
-            tf.summary.scalar('g_val_accuracy', self.val_accuracy.result(), step=epoch)
+            # for (batch, (inp, tar)) in enumerate(val_g_dataset):
+            #     enc_padding_mask, combined_mask, dec_padding_mask = Transformer.create_masks(inp, tar)
+            #     self.val_step_g(inp, tar, False, enc_padding_mask, combined_mask, dec_padding_mask)
+            # tf.summary.scalar('g_val_loss', self.val_loss.result(), step=epoch)
+            # tf.summary.scalar('g_val_accuracy', self.val_accuracy.result(), step=epoch)
 
             print(f'Epoch {epoch + 1} Loss {self.train_loss.result():.4f} Accuracy {self.train_accuracy.result():.4f}')
-
-            ckpt_save_path = self.ckpt_manager.save()
-            print(f'Saving checkpoint for epoch {epoch + 1} at {ckpt_save_path}')
+            if epoch % 9 == 0:
+                ckpt_save_path = self.ckpt_manager.save()
+                print(f'Saving checkpoint for epoch {epoch + 1} at {ckpt_save_path}')
             print(f'Time taken for 1 epoch: {time.time() - start:.2f} secs\n')
 
 
 # Static parameters
-d_model = 768
+d_model = 256
 warmup_step = 10000
 max_seq_len = 512
-batch_size = 256
-train_epochs = 10
+batch_size = 32
+train_epochs = 100
 tokenizer = BertTokenizer(vocab_file="./dataset/bert_vocab.txt", do_lower_case=False)
 input_vocab_size = output_vocab_size = tokenizer.vocab_size
-checkpoint_path = "./checkpoints/train"
-train_dataset_path = 'F:/datasets/train'
-validation_dataset_path = 'F:/datasets/validation'
+checkpoint_path = "./checkpoints/train/"
+train_dataset_path = '/home/veneto/datasets/'
 usage_file_path = './dataset/usage_file.json'
 
 # initialize model, loss function and optimizer
-model = CPTModel(num_layer_enc=10, num_layer_dec=2, d_model=d_model, num_head=12, dff=3072,
+model = CPTModel(num_layer_enc=4, num_layer_dec=4, d_model=d_model, num_head=8, dff=2048,
                  input_vocab_size=input_vocab_size, output_vocab_size=output_vocab_size,
                  pe_input=max_seq_len, pe_output=max_seq_len, rate=0.1)
 
@@ -160,13 +163,8 @@ log_dir = "./logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 file_writer = tf.summary.create_file_writer(log_dir + "/metrics")
 file_writer.set_as_default()
 
-# fetch train&validation dataset
-loader = DataLoader(train_dataset_path, validation_dataset_path, usage_file_path)
-understanding_dataset = loader.load(mode='train', batch_size=batch_size, tokenizer=tokenizer)
-generation_dataset = loader.load(mode='train', batch_size=batch_size, tokenizer=tokenizer, shuffling=True)
-val_dataset = loader.load(mode='validation', batch_size=batch_size, tokenizer=tokenizer)
-generation_val_dataset = loader.load(mode='validation', batch_size=batch_size, tokenizer=tokenizer, shuffling=True)
+loader = DataLoader(train_dataset_path, usage_file_path)
 # initialize trainer class
-trainer = CPTrainer(model, loss_fn, optimizer, ckpt_manager)
+trainer = CPTrainer(model, loss_fn, optimizer, ckpt_manager, loader)
 # start training
-trainer.train(understanding_dataset, generation_dataset, val_dataset, generation_val_dataset, num_epochs=train_epochs)
+trainer.train(batch_size, tokenizer, train_epochs)

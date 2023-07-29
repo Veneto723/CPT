@@ -76,10 +76,9 @@ class DataLoader:
     amount of times so far.
     """
 
-    def __init__(self, train_dataset_path, validation_dataset_path, usage_file_path):
+    def __init__(self, dataset_path, usage_file_path):
         # load dataset and randomly get data from it
-        self.train_dataset_path = train_dataset_path
-        self.val_dataset_path = validation_dataset_path
+        self.dataset_path = dataset_path
         self.usage_file_path = usage_file_path
         if os.path.exists(usage_file_path):
             with open(usage_file_path, 'r') as usage_file:
@@ -97,12 +96,8 @@ class DataLoader:
         with open(self.usage_file_path, 'w') as usage_file:
             json.dump(data, usage_file)
 
-    def select_next_files(self, mode='train'):
-        if mode == 'train':
-            dataset_path = self.train_dataset_path
-        else:
-            dataset_path = self.val_dataset_path
-        all_files = [file for file in os.listdir(dataset_path) if file.endswith(".csv.bz2")]
+    def select_next_files(self):
+        all_files = [file for file in os.listdir(self.dataset_path) if file.endswith(".csv.bz2")]
         epsilon = 0.9 * tf.math.exp(-0.001 * self.steps) + 0.1
         # epsilon-greedy strategy
         if random.random() < epsilon or not self.file_usage_counts:
@@ -117,9 +112,8 @@ class DataLoader:
         self.steps += 1
         return chosen_file
 
-    def load(self, tokenizer, mode='train', batch_size=64, mask_rate=0.15, shuffling=False):
-        chosen_file = self.select_next_files(mode)
-        file_path = os.path.join(self.train_dataset_path if mode == 'train' else self.val_dataset_path, chosen_file)
+    def load(self, tokenizer, batch_size=64, mask_rate=0.15):
+        file_path = os.path.join(self.dataset_path, self.select_next_files())
 
         # Read the CSV file as a pandas DataFrame, and convert the string of token IDs into list of integers
         frame = pd.read_csv(file_path, names=['text'])

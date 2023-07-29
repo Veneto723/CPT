@@ -10,20 +10,19 @@ class CPTModel(tf.keras.Model):
 
         self.encoder = Transformer.Encoder(num_layer_enc, d_model, num_head, dff, input_vocab_size, pe_input, rate)
         self.decoder_u = Transformer.Decoder(num_layer_dec, d_model, num_head, dff, output_vocab_size, pe_output, rate)
-        self.decoder_g = Transformer.Decoder(num_layer_dec, d_model, num_head, dff, output_vocab_size, pe_output, rate)
-        self.final_layer_u = Transformer.FinalLayer()
-        self.final_layer_g = Transformer.FinalLayer()
+        # self.decoder_g = Transformer.Decoder(num_layer_dec, d_model, num_head, dff, output_vocab_size, pe_output, rate)
+        self.final_layer = Transformer.FinalLayer(output_vocab_size)
 
     def call(self, inp, tar, training, enc_padding_mask, look_ahead_mask, dec_padding_mask, task='understanding'):
         enc_output = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
 
         # dec_output.shape == (batch_size, tar_seq_len, d_model)
-        if task == 'understanding':
-            dec_output, attention_weights = self.decoder_u(tar, enc_output, training, look_ahead_mask, dec_padding_mask)
-            final_output = self.final_layer_u(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
-        else:
-            dec_output, attention_weights = self.decoder_g(tar, enc_output, training, look_ahead_mask, dec_padding_mask)
-            final_output = self.final_layer_g(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
+        # if task == 'understanding':
+        dec_output, attention_weights = self.decoder_u(tar, enc_output, training, look_ahead_mask, dec_padding_mask)
+        final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
+        # else:
+        #     dec_output, attention_weights = self.decoder_g(tar, enc_output, training, look_ahead_mask, dec_padding_mask)
+        #     final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
         return final_output, attention_weights
 
