@@ -9,18 +9,49 @@ from transformers import BertTokenizer
 import datetime
 
 
+class MaskedSparseCategoricalAccuracy(tf.keras.metrics.Metric):
+    def __init__(self, name='masked_sparse_categorical_accuracy', **kwargs):
+        super(MaskedSparseCategoricalAccuracy, self).__init__(name=name, **kwargs)
+        self.total = self.add_weight(name='total', initializer='zeros')
+        self.count = self.add_weight(name='count', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        mask = tf.math.logical_not(tf.math.equal(y_true, 0))
+        mask = tf.expand_dims(tf.cast(mask, dtype=y_true.dtype), axis=-1)
+        y_true = y_true * mask
+        values = tf.cast(tf.equal(y_true, tf.argmax(y_pred, axis=-1, output_type=tf.int32)), dtype=tf.float32)
+        self.total.assign_add(tf.reduce_sum(values))
+        self.count.assign_add(tf.reduce_sum(mask))
+
+    def result(self):
+        return self.total / self.count
+
+    def reset_states(self):
+        self.total.assign(0.)
+        self.count.assign(0.)
+
+
 class CPTrainer:
     def __init__(self, model, loss_fn, optimizer, ckpt_manager, loader):
         self.model = model
-        self.loss_fn = loss_fn
+        self.loss_object = loss_fn
         self.optimizer = optimizer
         self.train_loss = Mean(name='train_loss')
-        self.train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+        self.train_accuracy = MaskedSparseCategoricalAccuracy(name='train_accuracy')
         self.val_loss = Mean(name='val_loss')
-        self.val_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='val_accuracy')
+        self.val_accuracy = MaskedSparseCategoricalAccuracy(name='val_accuracy')
         self.ckpt_manager = ckpt_manager
         self.best_val_loss = float('inf')
         self.loader = loader
+
+    def loss_function(self, real, pred):
+        mask = tf.math.logical_not(tf.math.equal(real, 0))
+        loss_ = self.loss_object(real, pred)
+
+        mask = tf.cast(mask, dtype=loss_.dtype)
+        loss_ *= mask
+
+        return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
 
     def evaluate(self, inp, tar_u, tar_g, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u,
                  look_ahead_mask_g, dec_padding_mask_g):
@@ -28,7 +59,7 @@ class CPTrainer:
                                      task='understanding')
         # prediction_g, _ = self.model(inp, tar_g, training, enc_padding_mask, look_ahead_mask_g, dec_padding_mask_g,
         #                              task='generation')
-        loss_u = self.loss_fn(tar_u, prediction_u)
+        loss_u = self.loss_function(tar_u, prediction_u)
         # loss_g = self.loss_fn(tar_g, prediction_g)
         # loss = loss_u + loss_g
         # return loss, prediction_u, prediction_g
@@ -39,7 +70,7 @@ class CPTrainer:
         with tf.GradientTape() as tape:
             prediction_u, _ = self.model(inp, tar_u, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u,
                                          task='understanding')
-            loss_u = self.loss_fn(tar_u, prediction_u)
+            loss_u = self.loss_function(tar_u, prediction_u)
         gradients = tape.gradient(loss_u, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
@@ -62,7 +93,7 @@ class CPTrainer:
     def val_step_u(self, inp, tar_u, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u):
         prediction_u, _ = self.model(inp, tar_u, training, enc_padding_mask, look_ahead_mask_u, dec_padding_mask_u,
                                      task='understanding')
-        loss_u = self.loss_fn(tar_u, prediction_u)
+        loss_u = self.loss_function(tar_u, prediction_u)
 
         self.val_loss(loss_u)
         self.val_accuracy(tar_u, prediction_u)
