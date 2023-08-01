@@ -17,9 +17,9 @@ class MaskedSparseCategoricalAccuracy(tf.keras.metrics.Metric):
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         mask = tf.math.logical_not(tf.math.equal(y_true, 0))
-        mask = tf.cast(mask, dtype=y_true.dtype)
-        y_true = y_true * mask
         values = tf.cast(tf.equal(y_true, tf.argmax(y_pred, axis=-1, output_type=tf.int32)), dtype=tf.float32)
+        mask = tf.cast(mask, dtype=values.dtype)
+        values = values * mask
         self.total.assign_add(tf.reduce_sum(values))
         self.count.assign_add(tf.reduce_sum(tf.cast(mask, tf.float32)))
 
