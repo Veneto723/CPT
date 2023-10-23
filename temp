@@ -1,36 +1,14 @@
-import sagemaker
-import boto3
-from sagemaker.huggingface import HuggingFace
-
-try:
-	role = sagemaker.get_execution_role()
-except ValueError:
-	iam = boto3.client('iam')
-	role = iam.get_role(RoleName='sagemaker_execution_role')['Role']['Arn']
-		
-hyperparameters = {
-	'model_name_or_path':'meta-llama/Llama-2-70b-chat-hf',
-	'output_dir':'/opt/ml/model'
-	# add your remaining hyperparameters
-	# more info here https://github.com/huggingface/transformers/tree/v4.26.0/examples/pytorch/question-answering
-}
-
-# git configuration to download our fine-tuning script
-git_config = {'repo': 'https://github.com/huggingface/transformers.git','branch': 'v4.26.0'}
-
-# creates Hugging Face estimator
-huggingface_estimator = HuggingFace(
-	entry_point='run_qa.py',
-	source_dir='./examples/pytorch/question-answering',
-	instance_type='ml.p3.2xlarge',
-	instance_count=1,
-	role=role,
-	git_config=git_config,
-	transformers_version='4.26.0',
-	pytorch_version='1.13.1',
-	py_version='py39',
-	hyperparameters = hyperparameters
-)
-
-# starting the train job
-huggingface_estimator.fit()
+[INFO|tokenization_utils_base.py:1850] 2023-10-23 10:24:56,471 >> loading file tokenizer.model
+[INFO|tokenization_utils_base.py:1850] 2023-10-23 10:24:56,471 >> loading file tokenizer.json
+[INFO|tokenization_utils_base.py:1850] 2023-10-23 10:24:56,471 >> loading file added_tokens.json
+[INFO|tokenization_utils_base.py:1850] 2023-10-23 10:24:56,471 >> loading file special_tokens_map.json
+[INFO|tokenization_utils_base.py:1850] 2023-10-23 10:24:56,471 >> loading file tokenizer_config.json
+Traceback (most recent call last):
+  File "/media/veneto/data/pythonProjects/transformers/examples/pytorch/question-answering/run_qa.py", line 711, in <module>
+    main()
+  File "/media/veneto/data/pythonProjects/transformers/examples/pytorch/question-answering/run_qa.py", line 359, in main
+    model = AutoModelForQuestionAnswering.from_pretrained(
+  File "/home/veneto/anaconda3/envs/transformer/lib/python3.9/site-packages/transformers/models/auto/auto_factory.py", line 566, in from_pretrained
+    raise ValueError(
+ValueError: Unrecognized configuration class <class 'transformers.models.llama.configuration_llama.LlamaConfig'> for this kind of AutoModel: AutoModelForQuestionAnswering.
+Model type should be one of AlbertConfig, BartConfig, BertConfig, BigBirdConfig, BigBirdPegasusConfig, BloomConfig, CamembertConfig, CanineConfig, ConvBertConfig, Data2VecTextConfig, DebertaConfig, DebertaV2Config, DistilBertConfig, ElectraConfig, ErnieConfig, ErnieMConfig, FalconConfig, FlaubertConfig, FNetConfig, FunnelConfig, GPT2Config, GPTNeoConfig, GPTNeoXConfig, GPTJConfig, IBertConfig, LayoutLMv2Config, LayoutLMv3Config, LEDConfig, LiltConfig, LongformerConfig, LukeConfig, LxmertConfig, MarkupLMConfig, MBartConfig, MegaConfig, MegatronBertConfig, MobileBertConfig, MPNetConfig, MptConfig, MraConfig, MT5Config, MvpConfig, NezhaConfig, NystromformerConfig, OPTConfig, QDQBertConfig, ReformerConfig, RemBertConfig, RobertaConfig, RobertaPreLayerNormConfig, RoCBertConfig, RoFormerConfig, SplinterConfig, SqueezeBertConfig, T5Config, UMT5Config, XLMConfig, XLMRobertaConfig, XLMRobertaXLConfig, XLNetConfig, XmodConfig, YosoConfig.
